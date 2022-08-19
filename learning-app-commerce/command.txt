@@ -1,2 +1,2 @@
-ansible-playbook playbook.yml -i inventory.txt --extra-vars "ansible_sudo_pass=A123321a!"
+ansible-playbook playbook.yml -i inventory.txt --extra-vars "ansible_sudo_pass=target_root_password"
 
