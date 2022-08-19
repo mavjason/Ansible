@@ -14,3 +14,11 @@ Configure the inventory file:
 Run the following command:
     ansible-playbook playbook.yml -i inventory.txt --extra-vars "ansible_sudo_pass={root_password}"
     root_password: Is the Password of the root on Target Machine.
+
+ To view the website visit from the browser:
+ 
+    Target_Ip:5000
+    
+    Example:
+     
+    192.168.56.101:5000
