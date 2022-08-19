@@ -1,0 +1,1 @@
+target3 ansible_host=192.168.56.101 ansible_user=mavjason ansible_password=A123321a!

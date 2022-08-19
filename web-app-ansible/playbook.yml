@@ -1,0 +1,134 @@
+- name: Deploy a web application
+  hosts: target3
+  become: true
+  tasks:
+
+    - name: Make a ping
+      ping:
+    
+    # We are working with snapshots.
+    # The time (Date,Clock) is not going to be valid.
+    # In order to perform:
+    # $sudo apt-get update
+    # We must set the correct time.
+    
+    - name: We must add NTP in order to perform sudo apt-get udpate.
+      become: yes
+      apt: 
+        name: ntp
+        state: present
+    
+    - name: We must restart ntp Service
+      become: yes
+      service: 
+        name: ntp
+        state: restarted
+
+    - name: Install all required dependencies
+      become: yes
+      apt: 
+        name: "{{ item }}" 
+        state: present
+        update_cache: yes
+      with_items: 
+        #- python
+        - python3
+        - python3-pip
+        
+        # It is going to be installed with pip
+        # - python-setuptools 
+
+        - python3-dev
+        - build-essential
+
+    - name: Install all pip dependencies
+      become: yes
+      pip:
+        name: "{{ item }}" 
+        state: latest
+      with_items: 
+        - setuptools
+        - pymysql
+        - flask
+        - flask-mysql   
+
+    - name: Install and Configure Database
+      become: yes
+      apt: 
+        name: "{{ item }}" 
+        state: present
+        update_cache: yes
+      with_items: 
+        - mariadb-server 
+        - mariadb-client
+
+    - name: Enable Database service
+      service: 
+        name: mysql
+        state: started
+
+    # We need to configure MySQL. If we do not do the steps down
+    # we are not going to be able to go inside the database.
+    # We have to configure MySQL privileges.
+
+    - name: Stop MySQL
+      service: name=mysqld state=stopped
+    - name: set environment variables
+      shell: systemctl set-environment MYSQLD_OPTS="--skip-grant-tables"
+    - name: Start MySQL
+      service: name=mysqld state=started
+    - name: sql query
+      command:  mysql -u root --execute="UPDATE mysql.user SET authentication_string = PASSWORD('') WHERE User = 'root' AND Host = 'localhost';"
+    - name: sql query flush
+      command:  mysql -u root --execute="FLUSH PRIVILEGES"
+    - name: Stop MySQL
+      service: name=mysqld state=stopped
+    - name: unset environment variables
+      shell: systemctl unset-environment MYSQLD_OPTS
+    - name: Start MySQL
+      service: name=mysqld state=started
+      
+    # We ready to use Database
+    
+    - name: Create Database user
+      mysql_user:
+        login_user: root
+        login_password: ''
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        name: db_user
+        password: Passw0rd
+        priv: '*.*:ALL'
+        state: present
+        host: '%'
+
+    - name: Create Application database
+      mysql_db:
+        login_user: root
+        login_password: ''
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        name: employee_db
+        state: present
+    
+    - name: Insert some test data
+      community.mysql.mysql_query:
+        login_db: employee_db
+        login_user: root
+        login_password: ''
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        query:
+        - CREATE TABLE employees (name VARCHAR(20));
+        - INSERT INTO employees VALUES ('JOHN');
+        single_transaction: yes
+      ignore_errors: yes
+
+    - name: Create directory
+      file:
+        path: /home/l/web-app
+        state: directory
+        mode: '0775'
+ 
+    - name: Copy app.py source code
+      copy: src=app.py dest=/home/l/web-app/app.py
+ 
+    - name: Start web server
+      shell: FLASK_APP=/home/l/web-app/app.py nohup flask run --host=0.0.0.0 &
