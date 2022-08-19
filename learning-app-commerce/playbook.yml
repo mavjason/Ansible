@@ -1,0 +1,234 @@
+- name: Deploy a learning-app-ecommerce
+  hosts: target3
+  become: true
+  tasks:
+
+    # Test connection make ping from controller to target
+
+    - name: Make a ping
+      ping:
+    
+    # We are working with snapshots.
+    # The time (Date,Clock) is not going to be valid.
+    # In order to perform:
+    # $sudo apt-get update
+    # We must set the correct time.
+    
+    - name: We must add NTP in order to perform sudo apt-get udpate.
+      become: yes
+      apt: 
+        name: ntp
+        state: present
+    
+    - name: We must restart ntp Service
+      become: yes
+      service: 
+        name: ntp
+        state: restarted
+
+    # -1. Install all packages that app needs
+
+    - name: Install all required dependencies
+      become: yes
+      apt: 
+        name: "{{ item }}" 
+        state: present
+        update_cache: yes
+      with_items: 
+        - firewalld
+        - mariadb-server
+        - apache2
+        - php
+        - php-mysql
+        - git
+
+    - name: Install all to use Mysql module
+      become: yes
+      apt: 
+        name: "{{ item }}" 
+        state: present
+        update_cache: yes
+      with_items: 
+        #- python
+        # 2 lines down can be erased
+        - python3
+        - python3-pip
+        
+        # It is going to be installed with pip
+        # - python-setuptools 
+
+        - python3-dev
+        - build-essential
+
+    - name: Install all pip dependencies
+      become: yes
+      pip:
+        name: "{{ item }}" 
+        state: latest
+      with_items: 
+        - setuptools
+        - pymysql
+
+    # 0.Configure firewall for Database
+
+    # Start Enable firewalld Service
+    
+    - name: Start service firewalld, if not started
+      ansible.builtin.service:
+        name: firewalld
+        state: started       
+
+    # Enable firewalld Systemctl
+
+    - name: Make sure a service unit is running
+      ansible.builtin.systemd:
+        name: firewalld
+        enabled: yes
+
+    # 1.Deploy and Configure Database
+
+      # Start Enable mariadb Service
+    
+    - name: Start service firewalld, if not started
+      ansible.builtin.service:
+        name: mariadb
+        state: started       
+
+      # Enable mariadb Service
+
+    - name: Make sure a service unit is running
+      ansible.builtin.systemd:
+        name: mariadb
+        enabled: yes
+
+    # 2.Configure firewall for Database
+
+      # sudo firewall-cmd --permanent --zone=public --add-port=3306/tcp
+
+    - name: permit traffic in default zone on port 3306/tcp
+      ansible.posix.firewalld:
+        port: 3306/tcp
+        permanent: yes
+        zone: public
+        state: enabled
+
+      # sudo firewall-cmd --reload
+
+    - name: reload service firewalld
+      systemd:
+        name: firewalld
+        state: reloaded
+
+    # 3.Configure Database
+
+    # We need to configure MySQL for the initialization.
+
+    - name: Stop MySQL
+      service: name=mysqld state=stopped
+    - name: set environment variables
+      shell: systemctl set-environment MYSQLD_OPTS="--skip-grant-tables"
+    - name: Start MySQL
+      service: name=mysqld state=started
+    - name: sql query
+      command:  mysql -u root --execute="UPDATE mysql.user SET authentication_string = PASSWORD('') WHERE User = 'root' AND Host = 'localhost';"
+    - name: sql query flush
+      command:  mysql -u root --execute="FLUSH PRIVILEGES"
+    - name: Stop MySQL
+      service: name=mysqld state=stopped
+    - name: unset environment variables
+      shell: systemctl unset-environment MYSQLD_OPTS
+    - name: Start MySQL
+      service: name=mysqld state=started
+
+
+  # We ready to use Database
+   
+    # Create a Database
+    
+    - name: Create Application database
+      mysql_db:
+        login_user: root
+        login_password: ''
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        name: ecomdb
+        state: present
+    
+    # Create a Database User  
+
+    - name: Create Database user
+      mysql_user:
+        login_user: root
+        login_password: ''
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        name: ecomuser
+        password: ecompassword
+        priv: '*.*:ALL'
+        state: present
+        host: '%'
+
+    # Insert Data to the Database
+
+    - name: Insert some test data
+      community.mysql.mysql_query:
+        login_db: ecomdb
+        login_user: root
+        login_password: ''
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        query:
+        - CREATE TABLE products (id mediumint(8) unsigned NOT NULL auto_increment,Name varchar(255) default NULL,Price varchar(255) default NULL, ImageUrl varchar(255) default NULL,PRIMARY KEY (id)) AUTO_INCREMENT=1;
+        - INSERT INTO products (Name,Price,ImageUrl) VALUES ("Laptop","100","c-1.png"),("Drone","200","c-2.png"),("VR","300","c-3.png"),("Tablet","50","c-5.png"),("Watch","90","c-6.png"),("Phone Covers","20","c-7.png"),("Phone","80","c-8.png"),("Laptop","150","c-4.png");
+        single_transaction: yes
+      ignore_errors: yes
+
+    # 2.Configure firewall add port 80
+
+      # sudo firewall-cmd --permanent --zone=public --add-port=80/tcp
+
+    - name: permit traffic in default zone on port 80/tcp
+      ansible.posix.firewalld:
+        port: 80/tcp
+        permanent: yes
+        zone: public
+        state: enabled
+
+      # sudo firewall-cmd --reload
+
+    - name: reload service firewalld
+      systemd:
+        name: firewalld
+        state: reloaded
+
+    # For this command:
+    # sudo sed -i 's/index.html/index.php/g' /etc/httpd/conf/httpd.conf
+    # check this: https://stackoverflow.com/questions/2384423/index-php-not-loading-by-default
+
+      # Start Enable apache2 Service
+    
+    - name: Start service apache2, if not started
+      ansible.builtin.service:
+        name: apache2
+        state: started       
+
+      # Enable mariadb Service
+
+    - name: Make sure a service unit is running
+      ansible.builtin.systemd:
+        name: apache2
+        enabled: yes
+    
+    - name: Ansible copy directory to the remote server
+      copy:
+        src: /home/mavjason/learning-app-commerce/learning-app-ecommerce
+        dest: /var/www/html/
+
+    - name: This command will change the working directory to somedir/
+      ansible.builtin.shell:
+        cmd: sudo sed -i 's/172.20.1.101/localhost/g' index.php
+        chdir: /var/www/html/learning-app-ecommerce
+
+    #Reload apache server to see The Database and everything as should
+    
+    - name: Restart service apache2 in order to load the Database
+      ansible.builtin.service:
+        name: apache2
+        state: restarted  
