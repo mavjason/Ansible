@@ -2,7 +2,7 @@ This project automates this github repository: https://github.com/mmumshad/simpl
 
 Requirements:
   In the same Network:
-  1)Virtual Controller with Ansible installed (example: 92.168.56.75) (Ubuntu 20.04 used)
+  1)Virtual Controller with Ansible installed (example: 192.168.56.75) (Ubuntu 20.04 used)
   2)Virtual Target (example: 192.168.56.101) (Ubuntu 20.04 used)
   
 Configure the inventory file:
